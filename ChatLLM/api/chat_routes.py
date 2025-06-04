@@ -72,6 +72,10 @@ def regenerate(chat_id: str, idx: int, req: RegenReq | None = None):
         raise HTTPException(404, "chat not found")
     model = req.model if req else None
     temperature = req.temperature if req else None
+    chat = svc._chat_store[chat_id]
+    if chat.get("stream"):
+        gen = svc.stream_regenerate_assistant(chat_id, idx, model, temperature)
+        return StreamingResponse(gen, media_type="text/plain")
     content = svc.regenerate_assistant(chat_id, idx, model, temperature)
     return {"content": content}
 

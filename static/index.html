@@ -258,7 +258,26 @@
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ content: txt })
   });
-  const regenMessage = (id, idx)               => api(`/api/chats/${id}/messages/${idx}/regenerate`, { method: 'POST' });
+  async function regenMessage(id, idx, onChunk) {
+    const res = await fetch(`/api/chats/${id}/messages/${idx}/regenerate`, {
+      method: 'POST'
+    });
+    if (res.headers.get('content-type')?.includes('text/plain')) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let all = '';
+      while (true) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        all += chunk;
+        onChunk && onChunk(chunk);
+      }
+      return {content: all};
+    }
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
   const patchChat    = (id, meta)              => api(`/api/chats/${id}`, {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
@@ -336,7 +355,11 @@
         div.classList.add('regenerating');
         renderMarkdown(body, '…');
         try {
-          const r = await regenMessage(currentId, msgIndex);
+          body.dataset.raw = '';
+          const r = await regenMessage(currentId, msgIndex, chunk => {
+            body.dataset.raw += chunk;
+            renderMarkdown(body, body.dataset.raw);
+          });
           body.dataset.raw = r.content;
           renderMarkdown(body, r.content);
         } catch (e) {

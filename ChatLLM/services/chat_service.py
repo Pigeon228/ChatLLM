@@ -196,6 +196,33 @@ def regenerate_assistant(cid: str, idx: int,
     return answer
 
 
+def stream_regenerate_assistant(
+    cid: str, idx: int, model: str | None, temperature: float | None
+) -> None:
+    messages = _chat_store[cid]["messages"]
+
+    if not 0 <= idx < len(messages):
+        raise HTTPException(404, "message not found")
+    if messages[idx]["role"] != "assistant":
+        raise HTTPException(400, "can regenerate only assistant messages")
+
+    chat = _chat_store[cid]
+    m, t = _choose(chat, model, temperature)
+
+    context = messages[:idx]
+    parts = []
+    for part in _llm_answer_stream(_messages_with_prompt(chat, context), m, t):
+        parts.append(part)
+        yield part
+    answer = "".join(parts)
+    messages[idx]["content"] = answer
+
+    if model:
+        chat["model"] = model
+    if temperature is not None:
+        chat["temperature"] = temperature
+
+
 def update_chat(cid: str, title: str, model: str, temperature: float, stream: bool, prompt: str) -> dict:
     if cid not in _chat_store:
         raise HTTPException(404, "chat not found")
