@@ -453,7 +453,23 @@
   /* ────────── события UI ────────── */
   document.getElementById('new').onclick = async () => {
     const c = await createChat().catch(console.error);
-    if (c) refreshChats();
+    if (!c) return;
+
+    // добавляем чат локально без ожидания перезагрузки списка
+    chats.push(c);
+    const li = document.createElement('li');
+    li.dataset.id = c.id;
+    li.innerHTML = `<span>${c.title}</span><button class="del" title="Удалить">×</button>`;
+    li.querySelector('span').onclick = () => selectChat(c.id);
+    li.querySelector('.del').onclick = async e => {
+      e.stopPropagation();
+      if (!confirm('Удалить чат?')) return;
+      await deleteChat(c.id);
+      if (c.id === currentId) { currentId = null; clearLog(); }
+      refreshChats();
+    };
+    chatsUL.appendChild(li);
+    selectChat(c.id);
   };
 
   sendBtn.onclick = async () => {
