@@ -9,7 +9,7 @@ from ..core.config import get_settings
 
 _settings = get_settings()
 
-DEFAULT_MODEL = "google/gemini-2.0-flash-001"
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_PROMPT = ""
 
@@ -98,10 +98,9 @@ def _llm_answer_stream(messages: List[dict], model: str, temperature: float):
 
 def _choose(chat: Dict, model: str | None, temperature: float | None) -> tuple[str, float]:
     """Определяем, какую модель и температуру использовать."""
-    return (
-        model or chat["model"],
-        temperature if temperature is not None else chat["temperature"],
-    )
+    chosen_model = model or chat["model"] or DEFAULT_MODEL
+    chosen_temp = temperature if temperature is not None else chat["temperature"]
+    return (chosen_model, chosen_temp)
 
 
 def _messages_with_prompt(chat: Dict, messages: List[dict] | None = None) -> List[dict]:
@@ -202,7 +201,7 @@ def update_chat(cid: str, title: str, model: str, temperature: float, stream: bo
         raise HTTPException(404, "chat not found")
     _chat_store[cid].update({
         "title": title,
-        "model": model,
+        "model": model or DEFAULT_MODEL,
         "temperature": temperature,
         "stream": stream,
         "prompt": prompt,
