@@ -157,10 +157,17 @@
           <input type="text" id="chatTitleInput" class="form-control" placeholder="Введите название чата">
         </div>
         <div class="form-group">
+          <label for="modelSearch">Поиск модели</label>
+          <input type="text" id="modelSearch" class="form-control" placeholder="Поиск...">
+        </div>
+        <div class="form-group">
           <label for="modelSelect">Модель</label>
           <select id="modelSelect" class="form-control">
             <option disabled selected>Загрузка...</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label><input type="checkbox" id="streamToggle"> Стриминг ответа</label>
         </div>
         <div class="form-group">
           <label for="temperatureRange">Температура</label>
@@ -189,7 +196,9 @@
         settingsBtn   = document.getElementById('settingsBtn'),
         settingsModal = document.getElementById('settingsModal'),
         titleInput    = document.getElementById('chatTitleInput'),
+        modelSearch   = document.getElementById('modelSearch'),
         modelSelect   = document.getElementById('modelSelect'),
+        streamToggle  = document.getElementById('streamToggle'),
         tempRange     = document.getElementById('temperatureRange'),
         saveSettings  = document.getElementById('saveSettings'),
         cancelSettings= document.getElementById('cancelSettings'),
@@ -211,11 +220,28 @@
   const createChat   = ()                      => api('/api/chats', { method: 'POST' });
   const deleteChat   = id                      => api(`/api/chats/${id}`, { method: 'DELETE' });
   const getMessages  = id                      => api(`/api/chats/${id}`);
-  const sendMessage  = (id, txt)               => api(`/api/chats/${id}/messages`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ content: txt })
-  });
+  async function sendMessage(id, txt, onChunk) {
+    const res = await fetch(`/api/chats/${id}/messages`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ content: txt })
+    });
+    if (res.headers.get('content-type')?.includes('text/plain')) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let all = '';
+      while (true) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        all += chunk;
+        onChunk && onChunk(chunk);
+      }
+      return {content: all};
+    }
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
   const patchMessage = (id, idx, txt)          => api(`/api/chats/${id}/messages/${idx}`, {
     method: 'PATCH',
     headers: {'Content-Type':'application/json'},
@@ -328,6 +354,7 @@
     logDiv.appendChild(div);
     logDiv.scrollTop = logDiv.scrollHeight;
     messageCount++;
+    return div;
   }
 
   /* ────────── выбор и отрисовка чата ────────── */
@@ -346,6 +373,7 @@
       titleInput.value        = meta.title;
       tempRange.value         = meta.temperature;
       modelSelect.value       = meta.model;
+      streamToggle.checked    = meta.stream;
       settingsModal.style.display = 'none';
       chatHdr.style.display   = 'flex';
 
@@ -392,8 +420,14 @@
     input.value = '';
     appendLine('user', txt);
     try {
-      const r = await sendMessage(currentId, txt);
-      appendLine('assistant', r.content);
+      const holder = appendLine('assistant', '');
+      const body = holder.querySelector('.msg-body');
+      const r = await sendMessage(currentId, txt, chunk => {
+        body.dataset.raw += chunk;
+        renderMarkdown(body, body.dataset.raw);
+      });
+      body.dataset.raw = r.content;
+      renderMarkdown(body, r.content);
     } catch (e) {
       appendLine('assistant', '⚠️ ' + e.message);
     }
@@ -417,7 +451,8 @@
     const meta = {
       title:      titleInput.value.trim() || 'Безымянный чат',
       model:      modelSelect.value,
-      temperature:+tempRange.value
+      temperature:+tempRange.value,
+      stream:     streamToggle.checked
     };
     try {
       const updated = await patchChat(currentId, meta);
@@ -434,7 +469,14 @@
   /* ────────── инициализация ────────── */
   (async function init() {
     const models = await api('/api/models').catch(() => []);
-    modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+    const modelsList = models;
+    function renderOptions(filter = '') {
+      const opts = modelsList.filter(m => m.toLowerCase().includes(filter.toLowerCase()))
+        .map(m => `<option value="${m}">${m}</option>`).join('');
+      modelSelect.innerHTML = opts;
+    }
+    modelSearch.oninput = () => renderOptions(modelSearch.value);
+    renderOptions();
     refreshChats();
   })();
 </script>
