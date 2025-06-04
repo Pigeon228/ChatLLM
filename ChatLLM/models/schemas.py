@@ -23,11 +23,6 @@ class SendReq(BaseModel):
 class SendResp(BaseModel):
     content: str
 
-
-class EditReq(BaseModel):
-    content: str
-
-
 class RegenReq(BaseModel):
     model: str | None = None
     temperature: float | None = None
