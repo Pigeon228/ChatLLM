@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache">
   <title>💬 LLM-чаты</title>
 
   <!-- ===== CSS ===== -->
@@ -87,6 +88,8 @@
   .btn-primary{background:var(--primary);color:#fff}
   .btn-light{background:var(--bg-light);color:var(--text)}
   .btn:hover{opacity:.9;transform:translateY(-1px)}
+  #modelSearch{margin-bottom:12px}
+  #streamToggle{margin-right:6px}
 
   @keyframes fadeIn{
     from{opacity:0;transform:translateY(-20px)}
@@ -422,6 +425,7 @@
     try {
       const holder = appendLine('assistant', '');
       const body = holder.querySelector('.msg-body');
+      body.dataset.raw = '';
       const r = await sendMessage(currentId, txt, chunk => {
         body.dataset.raw += chunk;
         renderMarkdown(body, body.dataset.raw);
