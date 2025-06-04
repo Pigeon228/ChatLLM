@@ -9,10 +9,11 @@ from ..core.config import get_settings
 
 _settings = get_settings()
 
-DEFAULT_MODEL = "google/gemini-2.0-flash-001"
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 DEFAULT_TEMPERATURE = 0.7
+DEFAULT_PROMPT = ""
 
-# id → {title, messages, model, temperature, stream}
+# id → {title, messages, model, temperature, stream, prompt}
 _chat_store: Dict[str, Dict] = {}
 
 
@@ -26,7 +27,8 @@ def create_chat() -> dict:
         "messages": [],
         "model": DEFAULT_MODEL,
         "temperature": DEFAULT_TEMPERATURE,
-        "stream": False,
+        "stream": True,
+        "prompt": DEFAULT_PROMPT,
     }
     return _chat_meta(pk)
 
@@ -47,6 +49,7 @@ def _chat_meta(pk: str) -> dict:
         "model": obj["model"],
         "temperature": obj["temperature"],
         "stream": obj["stream"],
+        "prompt": obj["prompt"],
     }
 
 
@@ -95,10 +98,15 @@ def _llm_answer_stream(messages: List[dict], model: str, temperature: float):
 
 def _choose(chat: Dict, model: str | None, temperature: float | None) -> tuple[str, float]:
     """Определяем, какую модель и температуру использовать."""
-    return (
-        model or chat["model"],
-        temperature if temperature is not None else chat["temperature"],
-    )
+    chosen_model = model or chat["model"] or DEFAULT_MODEL
+    chosen_temp = temperature if temperature is not None else chat["temperature"]
+    return (chosen_model, chosen_temp)
+
+
+def _messages_with_prompt(chat: Dict, messages: List[dict] | None = None) -> List[dict]:
+    msgs = messages if messages is not None else chat["messages"]
+    prompt = chat.get("prompt")
+    return ([{"role": "system", "content": prompt}] + msgs) if prompt else msgs
 
 
 def send_message(cid: str, user_text: str,
@@ -107,7 +115,7 @@ def send_message(cid: str, user_text: str,
     chat["messages"].append({"role": "user", "content": user_text})
 
     m, t = _choose(chat, model, temperature)
-    answer = _llm_answer(chat["messages"], m, t)
+    answer = _llm_answer(_messages_with_prompt(chat), m, t)
     chat["messages"].append({"role": "assistant", "content": answer})
 
     if model:
@@ -124,7 +132,7 @@ def stream_message(cid: str, user_text: str,
 
     m, t = _choose(chat, model, temperature)
     parts = []
-    for part in _llm_answer_stream(chat["messages"], m, t):
+    for part in _llm_answer_stream(_messages_with_prompt(chat), m, t):
         parts.append(part)
         yield part
     answer = "".join(parts)
@@ -155,7 +163,7 @@ def edit_message(cid: str, idx: int, new_content: str,
 
     chat = _chat_store[cid]
     m, t = _choose(chat, model, temperature)
-    answer = _llm_answer(messages, m, t)
+    answer = _llm_answer(_messages_with_prompt(chat, messages), m, t)
     messages.append({"role": "assistant", "content": answer})
 
     if model:
@@ -178,7 +186,7 @@ def regenerate_assistant(cid: str, idx: int,
     m, t = _choose(chat, model, temperature)
 
     context = messages[:idx]      # всё до ответа бота
-    answer = _llm_answer(context, m, t)
+    answer = _llm_answer(_messages_with_prompt(chat, context), m, t)
     messages[idx]["content"] = answer
 
     if model:
@@ -188,13 +196,41 @@ def regenerate_assistant(cid: str, idx: int,
     return answer
 
 
-def update_chat(cid: str, title: str, model: str, temperature: float, stream: bool) -> dict:
+def stream_regenerate_assistant(
+    cid: str, idx: int, model: str | None, temperature: float | None
+) -> None:
+    messages = _chat_store[cid]["messages"]
+
+    if not 0 <= idx < len(messages):
+        raise HTTPException(404, "message not found")
+    if messages[idx]["role"] != "assistant":
+        raise HTTPException(400, "can regenerate only assistant messages")
+
+    chat = _chat_store[cid]
+    m, t = _choose(chat, model, temperature)
+
+    context = messages[:idx]
+    parts = []
+    for part in _llm_answer_stream(_messages_with_prompt(chat, context), m, t):
+        parts.append(part)
+        yield part
+    answer = "".join(parts)
+    messages[idx]["content"] = answer
+
+    if model:
+        chat["model"] = model
+    if temperature is not None:
+        chat["temperature"] = temperature
+
+
+def update_chat(cid: str, title: str, model: str, temperature: float, stream: bool, prompt: str) -> dict:
     if cid not in _chat_store:
         raise HTTPException(404, "chat not found")
     _chat_store[cid].update({
         "title": title,
-        "model": model,
+        "model": model or DEFAULT_MODEL,
         "temperature": temperature,
         "stream": stream,
+        "prompt": prompt,
     })
     return _chat_meta(cid)

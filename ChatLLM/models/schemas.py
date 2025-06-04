@@ -12,6 +12,7 @@ class ChatMeta(BaseModel):
     model: str
     temperature: float
     stream: bool
+    prompt: str
 
 
 class SendReq(BaseModel):

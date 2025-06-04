@@ -21,6 +21,7 @@ class ChatUpdateReq(BaseModel):
     model: str
     temperature: float
     stream: bool
+    prompt: str
 
 
 @router.get("/chats", response_model=list[ChatMeta])
@@ -71,12 +72,16 @@ def regenerate(chat_id: str, idx: int, req: RegenReq | None = None):
         raise HTTPException(404, "chat not found")
     model = req.model if req else None
     temperature = req.temperature if req else None
+    chat = svc._chat_store[chat_id]
+    if chat.get("stream"):
+        gen = svc.stream_regenerate_assistant(chat_id, idx, model, temperature)
+        return StreamingResponse(gen, media_type="text/plain")
     content = svc.regenerate_assistant(chat_id, idx, model, temperature)
     return {"content": content}
 
 @router.patch("/chats/{chat_id}", response_model=ChatMeta)
 def update_chat(chat_id: str, req: ChatUpdateReq):
-    return svc.update_chat(chat_id, req.title, req.model, req.temperature, req.stream)
+    return svc.update_chat(chat_id, req.title, req.model, req.temperature, req.stream, req.prompt)
 
 
 @router.get("/models", response_model=list[str])
